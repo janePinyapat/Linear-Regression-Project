@@ -1,0 +1,215 @@
+---
+title: "Linear Regression Project"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+```
+
+
+## Part one: Least squares regression mechanics
+
+In this section, I aim to create my own algorithms for some standard statistics of a fitted linear regression model from scratch. With this, I use the operations
+```{r ,echo=FALSE}
+cat("solve, %*%, /, \n")
+```
+to manually produce results otherwise produced by the lm() command.
+
+# Load the data set
+
+We will be working with ` Guns.dta`, a Stata dataset containing yearly US state data between 1977 and 1999 of three different crime rates, a number of additional state characteristics, as well as an indicator for the existence of a "shall-carry" law that allows citizens to obtain a permission to wear concealed handguns. In the following, I will fit a simple predictive model for state-wide violent crime rates.
+
+To begin with, use the read.dta command in the "foreign" package to load ` Guns.dta`
+
+
+```{r , echo=T}
+library("foreign")
+guns.data <- read.dta("Guns-1.dta")
+
+```
+
+
+# Task 1a)
+First, we use the names()-command to know all the the variable names of `guns.data`
+Then, construct an ` X`-matrix containing the columns for an intercept, the logarithm of state population, average per capita income, shall-carry law in effect, as well as the logarithmic rates for murder and robberies. Additionally, create a `y`-vector containing the log violent crime rate (for the state that year).
+```{r , echo=T}
+  names(guns.data)
+# Converted some variables to logarithm and mutate the intercept 1 
+library(dplyr)
+guns.data <- guns.data %>%
+             mutate(intercept = 1, 
+                    pop.log = log(pop),
+                    mur.log = log(mur),
+                    rob.log = log(rob),
+                    vio.log = log(vio))
+
+X <- cbind(guns.data$intercept, 
+           guns.data$pop.log, 
+           guns.data$avginc, 
+           guns.data$shall, 
+           guns.data$mur, 
+           guns.data$rob)
+
+y <- guns.data$vio.log
+
+```
+
+# Task 1b)
+Build a function that uses ` X` and ` y` as inputs and returns the least squares
+estimate $\hat{\beta}$ of the slope coefficients on ` X`. Here you are only allowed to use matrix and scalar operations.
+```{r , echo=T}
+# We need to find the estimate beta from the formula (X'X)^-1(X'Y)
+estimate.beta <- function(X, y){
+ beta <- solve(t(X) %*% X) %*% t(X) %*% y
+return(beta)
+}
+
+```
+
+# Task 1c)
+Build a function that computes the model residuals. Refer to the previous function `estimate.beta` to get an estimate of the slope coefficients. Here you are only allowed to use matrix and scalar operations.
+```{r , echo=T}
+estimate.residual <- function(X, y){
+ res <- y - (X %*% estimate.beta(X, y))
+return(res)
+}
+
+```
+
+# Task 1d) 
+Build a function that computes $R^2$, i.e. the estimated proportion of variance of $Y$ that is explained by the covariates in your model. Refer to `estimate.residual` to get model residuals. Here you are only allowed to use matrix and scalar operations.
+```{r , echo=T}
+estimate.R2 <- function(X, y){
+ SSR <- sum(estimate.residual(X, y)^2)
+ TSS <- sum((y-mean(y))^2)
+ R2 <- 1-(SSR/TSS)
+ return(R2)
+}
+
+```
+
+## Part two: Linear regression practice
+
+# Task 2a)
+Now use the lm()-command to fit the same regression model as in Task 1. Refer to the ` guns.data` dataset directly instead of using the matrices ` X` and ` y`.
+```{r, echo=TRUE}
+lm.fit2a <- lm(vio.log ~ pop.log+avginc+shall+mur.log+ rob.log, data = guns.data)
+
+```
+
+# Task 2b)
+Least squares regression coefficients can be extracted from the fitted model ` lm.fit2a ` by using the `coef()`-command. Save the coefficients as a new object. Use your function from task 1b) to get manually constructed least squares estimates. Then, calculate the sum of squared differences between the elements of the two coefficient vectors to confirm that they are practically identical.
+
+```{r, echo=TRUE}
+lm.coef2b     <- as.matrix(coef(lm.fit2a))
+manual.coef1b <- estimate.beta(X, y)
+diff.beta2b    <- sum((lm.coef2b - manual.coef1b)^2)
+print(diff.beta2b)
+
+```  
+
+# Task 2c)
+Model residuals can be extracted from objects created by `lm` using the `residuals()` function. Obtain the model residuals of the regression from task 2a in this way. Additionally, residuals are saved inside the ` lm.fit2a ` object. Report the names of all objects within ` lm.fit2a ` and calculate the sum of squared differences between the residuals you find there and the residuals that you extracted using `residuals()`.
+
+``` {r, echo=TRUE}
+lm.res2c <- residuals(lm.fit2a)
+names(lm.fit2a)
+
+diff.res <- sum((lm.fit2a$residuals - lm.res2c)^2)
+print(diff.res)
+
+```
+
+# Task 2d)
+In order to obtain fitted values, we can use the `predict()`. Do this. The data for which we predict here is the same data used for model training. Accordingly, only need to specify one argument (i.e. input) for `predict()`. 
+
+```{r, echo=TRUE}
+lm.pred2d = predict(lm.fit2a)
+
+```
+
+# Task 2e)
+A good prediction model for violent crime rates should capture all systematic patterns in the variation of this variable. A simple, but very effective way of finding out whether this is the case is to look at residual plots. If model residuals look like more than just pure noise, then there must be patterns left that we can exploit. Begin by plotting the model residuals from Task 2c (y-axis) against the fitted values from Task 2d (x-axis). With this, we can see that there are remaining patterns in the data to explore. 
+
+``` {r, echo=TRUE}
+library(ggplot2)
+figure2e <- ggplot(guns.data, aes(x=lm.pred2d, y=lm.res2c)) +
+             geom_point() +
+             geom_smooth(formula = y ~ x, se= FALSE, method='loess', col='red') +
+             xlab("Fitted values") +
+             ylab("Residual model")
+print(figure2e)
+
+
+```
+
+
+# Task 2f)
+Let us proceed with another plot that should highlight an obvious source of unaccounted patterns in the data. Plot the model residuals against ` stateid`. 
+
+``` {r, echo=TRUE}
+# 
+figure2f <- ggplot(guns.data, aes(x= stateid, y= lm.res2c)) + 
+             geom_point(aes(colour = stateid)) +
+             xlab("State ID") +
+             ylab("Residuals")
+print(figure2f)
+
+
+```
+
+
+# Task 2g) 
+`stateid` is a variable that want to add to our model specification in some form. Before doing this, use the `summary()` command to get some descriptive statistics this variable in ` guns.data`. You will see that a mean and a median are reported. However, as the type of variable `stateid` is an integer, apparently it would not make sense to add this variable into our model.
+
+```{r, echo=TRUE}
+summary2g <- summary(guns.data$stateid)
+print(summary2g)
+
+
+```
+
+# Task 2h)
+The way in which R treats a specific variable can change considerably if we encode it as a factor variable. Hence, replace the variable `stateid` in `guns.data` with a version if itself that is encoded as factor variable. Use the `factor()` command for that. Next, get the summary statistics of this modified variable. What has changed?
+
+```{r, echo=TRUE}
+guns.data$stateid <- factor(guns.data$stateid)
+summary2h <- summary(guns.data$stateid)
+print(summary2h)
+
+```
+
+# Task 2i)
+Estimate the regression model from Task 2a with factor variable `state_id` as an additional regressor. Use the `summary()` command to report a summary of the regression results. By factoring the stateid, the 56 factor variables now are considered as ones of those observed variables which we include in our model regression to see the relation along with the other predicted variables against the violent rate. When plotting to see the residuals versus fitted model by using plot(lm.fit2i), there are clearly showing the plots which are normally distributed and randomised while remaining close to zero, indicating a better outcome overall
+
+```{r, echo=TRUE}
+lm.fit2i <- lm(vio.log ~ pop.log+avginc+shall+stateid+mur.log+rob.log, data = guns.data)
+summary2i <- summary(lm.fit2i)
+print(summary2i$coefficients[1:15,])
+
+#howincluded2i <- "??"
+
+```
+
+# Task 2j)
+The regression results in Task 2i) look the way they do because the ` lm()` command conveniently transforms the factor variable `stateid` into numerical variables before fitting the model. In particular, the `model.matrix()` command is automatically used to arrive at a set of regressors that one can directly feed into a least squares estimation routine. Some important R-commands are less convenient and require you to transform the predictors yourselves. In order to prepare for this situation, use the `model.matrix()` command manually with the same model specification as in Task 2i to get the set of predictors internally generated by `lm()`. 
+
+```{r, echo=TRUE}
+predictors2j   <- model.matrix( ~ pop.log + avginc + shall + mur.log + rob.log + stateid, data= guns.data)
+
+
+```
+
+# Task 2k)
+The set of predictors created in Task 2j allows you to use the set of functions for fitting a linear regression model that you wrote in Part 1 of this assignment. We will confirm this by using the ` estimate.R2` function written in Task 1c. Use the matrices ` y` and `predictors 2j` to obtain the R2 of the model specification of Tasks 2i-j. Additionally, use the matrices `y` and ` X` to get an R2 for the model in Task 2a. How did inclusion of `stateid` affect the capability of a linear regression to explain variation in violent crime rates in the sample used for fitting the model?
+
+```{r, echo=TRUE}
+lm.R2_withstate2k   <- estimate.R2(predictors2j, y)
+lm.R2_nostate2k     <- estimate.R2(X, y)
+print(c(lm.R2_withstate2k,lm.R2_nostate2k ))
+effect_of_stateid2k <- "By comparing the two scenarios, it is apparent that the model including the stateid variable outperforms in terms of obtaining the R2 closer to 1 comparing to the one's R2 without. It can be illustrated that it has approximately 96% of the total variability in violent crime rates, which is considered as a well-fitted linear regression. The R2 with state ID indicates the more reliable explained variation of the model against the total variation of the model."
+
+```
